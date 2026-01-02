@@ -2,15 +2,16 @@ using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
+using StateleSSE.Abstractions;
 
 namespace StateleSSE.Backplane.Redis.Infrastructure;
 
 /// <summary>
-/// Generic Redis backplane for horizontal scaling of SSE/realtime features.
+/// Redis-based implementation of ISseBackplane for horizontal scaling of SSE/realtime features.
 /// Completely agnostic to domain - just handles groups and pub/sub.
 /// Can be used for any realtime feature: todos, chats, notifications, quizzes, etc.
 /// </summary>
-public class RedisBackplane : IDisposable
+public class RedisBackplane : ISseBackplane, IDisposable
 {
     private readonly IConnectionMultiplexer _redis;
     private readonly ISubscriber _subscriber;
@@ -28,7 +29,7 @@ public class RedisBackplane : IDisposable
 
         // Subscribe to Redis pub/sub for ALL events on this channel
         _subscriber.Subscribe(
-            RedisChannel.Literal($"{_channelPrefix}:events"),
+            (RedisChannel)$"{_channelPrefix}:events",
             async (channel, message) => await OnRedisMessage(message)
         );
 
@@ -99,7 +100,7 @@ public class RedisBackplane : IDisposable
 
         // Publish to Redis - all servers receive this
         await _subscriber.PublishAsync(
-            RedisChannel.Literal($"{_channelPrefix}:events"),
+            (RedisChannel)$"{_channelPrefix}:events",
             json
         );
 
@@ -131,7 +132,7 @@ public class RedisBackplane : IDisposable
         var json = JsonSerializer.Serialize(envelope);
 
         await _subscriber.PublishAsync(
-            RedisChannel.Literal($"{_channelPrefix}:events"),
+            (RedisChannel)$"{_channelPrefix}:events",
             json
         );
 
@@ -245,7 +246,7 @@ public class RedisBackplane : IDisposable
     public void Dispose()
     {
         // Unsubscribe from Redis pub/sub
-        _subscriber.Unsubscribe(RedisChannel.Literal($"{_channelPrefix}:events"));
+        _subscriber.Unsubscribe((RedisChannel)$"{_channelPrefix}:events");
 
         // Complete all local channels
         foreach (var groupChannels in _localSubscribers.Values)
@@ -276,18 +277,3 @@ internal class BackplaneEnvelope
     public DateTime PublishedAt { get; init; }
 }
 
-/// <summary>
-/// Diagnostics info about the backplane state on this server.
-/// </summary>
-public class BackplaneDiagnostics
-{
-    public int TotalGroups { get; init; }
-    public int TotalLocalSubscribers { get; init; }
-    public GroupInfo[] Groups { get; init; } = [];
-}
-
-public class GroupInfo
-{
-    public required string GroupId { get; init; }
-    public int LocalSubscribers { get; init; }
-}

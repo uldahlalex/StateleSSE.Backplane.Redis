@@ -1,75 +1,59 @@
-# RedisBackplane.SSE
+# StateleSSE.Backplane.Redis
 
-Redis-based backplane for horizontally scaling Server-Sent Events (SSE) in ASP.NET Core.
-
-## Features
-
-- ✅ **Horizontal Scaling**: Use Redis pub/sub to distribute SSE events across multiple server instances
-- ✅ **Type-Safe**: Generic event streaming with compile-time type safety
-- ✅ **Production-Ready**: Automatic keepalives, event IDs, retry directives
-- ✅ **ANCM Compatible**: Prevents IIS/Azure timeout issues with 30s keepalives
-- ✅ **Clean Architecture**: Controller-based approach with minimal boilerplate
-- ✅ **Channel-Based**: Event-specific channels for fine-grained subscriptions
+Redis-based implementation of `ISseBackplane` for horizontally scaling Server-Sent Events (SSE) across multiple server instances.
 
 ## Installation
 
 ```bash
-dotnet add package RedisBackplane.SSE
+dotnet add package StateleSSE.Backplane.Redis
 ```
+
+## Features
+
+- ✅ **Horizontal Scaling** - Sync SSE events across multiple servers via Redis pub/sub
+- ✅ **Zero Configuration** - Works out of the box with any Redis instance
+- ✅ **Group-Based Routing** - Efficient channel-based pub/sub
+- ✅ **Diagnostics** - Monitor subscriber counts and active groups
+- ✅ **Thread-Safe** - Concurrent dictionary-based local subscription management
 
 ## Quick Start
 
-### 1. Register Services
+### 1. Register the Backplane
 
 ```csharp
-// Program.cs
-builder.Services.AddRedisSseBackplane(options =>
-{
-    options.RedisConnectionString = "localhost:6379";
-    options.ChannelPrefix = "myapp";
-});
+using StateleSSE.Backplane.Redis.Infrastructure;
+using StackExchange.Redis;
+
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+builder.Services.AddSingleton<ISseBackplane>(sp =>
+    new RedisBackplane(sp.GetRequiredService<IConnectionMultiplexer>(), channelPrefix: "myapp"));
 ```
 
-### 2. Create Event DTOs
+### 2. Create SSE Endpoints
 
 ```csharp
-public record PlayerJoinedEvent(string GameId, string PlayerName, DateTime JoinedAt);
-public record RoundStartedEvent(string GameId, int RoundNumber, string Question);
-```
-
-### 3. Create SSE Controller
-
-```csharp
-using RedisBackplane.SSE;
-using RedisBackplane.SSE.Attributes;
+using StateleSSE.AspNetCore;
+using StateleSSE.Abstractions;
 
 [ApiController]
-public class GameEventsController(RedisBackplane backplane) : SseControllerBase(backplane)
+public class GameEventsController(ISseBackplane backplane) : ControllerBase
 {
-    [HttpGet("PlayerJoinedEvent")]
-    [EventSourceEndpoint(typeof(PlayerJoinedEvent))]
+    [HttpGet("events/player-joined")]
     public async Task StreamPlayerJoined([FromQuery] string gameId)
     {
-        var channel = $"game:{gameId}:PlayerJoinedEvent";
-        await StreamEventType<PlayerJoinedEvent>(channel);
-    }
-
-    [HttpGet("RoundStartedEvent")]
-    [EventSourceEndpoint(typeof(RoundStartedEvent))]
-    public async Task StreamRoundStarted([FromQuery] string gameId)
-    {
-        var channel = $"game:{gameId}:RoundStartedEvent";
-        await StreamEventType<RoundStartedEvent>(channel);
+        var channel = ChannelNamingExtensions.Channel<PlayerJoinedEvent>("game", gameId);
+        await HttpContext.StreamSseAsync<PlayerJoinedEvent>(backplane, channel);
     }
 }
 ```
 
-### 4. Publish Events
+### 3. Publish Events
 
 ```csharp
-public class GameService(RedisBackplane backplane)
+public class GameService(ISseBackplane backplane)
 {
-    public async Task PlayerJoined(string gameId, string playerName)
+    public async Task HandlePlayerJoined(string gameId, string playerName)
     {
         var channel = $"game:{gameId}:PlayerJoinedEvent";
         var evt = new PlayerJoinedEvent(gameId, playerName, DateTime.UtcNow);
@@ -79,24 +63,7 @@ public class GameService(RedisBackplane backplane)
 }
 ```
 
-### 5. Client-Side (JavaScript)
-
-```javascript
-const eventSource = new EventSource('/PlayerJoinedEvent?gameId=123');
-
-eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    console.log('Player joined:', data.PlayerName);
-};
-
-eventSource.onerror = (error) => {
-    console.error('Connection error:', error);
-};
-```
-
-## Architecture
-
-### How It Works
+## How It Works
 
 ```
 ┌─────────────┐         ┌─────────────┐
@@ -120,51 +87,41 @@ eventSource.onerror = (error) => {
         └────────────────┘
 ```
 
-1. Client connects to any server instance via SSE
-2. Server subscribes client to Redis channel
-3. Events published to Redis are received by all servers
-4. Each server forwards events to its local SSE clients
+1. Client connects to any server instance via SSE endpoint
+2. Server subscribes to Redis channel using `Subscribe()`
+3. Events published via `PublishToGroup()` are broadcast to Redis
+4. All servers receive the Redis message and forward to local SSE clients
 
-### Channel Pattern
+## API Reference
 
-Use hierarchical channel names for flexible subscriptions:
+### RedisBackplane Constructor
 
 ```csharp
-// Game-specific events
-$"game:{gameId}:PlayerJoinedEvent"
-$"game:{gameId}:RoundStartedEvent"
-
-// User-specific notifications
-$"user:{userId}:NotificationEvent"
-
-// Global broadcasts
-$"system:AnnouncementEvent"
+public RedisBackplane(IConnectionMultiplexer redis, string channelPrefix = "backplane")
 ```
 
-## Advanced Usage
+**Parameters:**
+- `redis` - StackExchange.Redis connection multiplexer
+- `channelPrefix` - Namespace prefix for Redis channels (default: "backplane")
 
-### Custom Keepalive Interval
-
+**Example:**
 ```csharp
-protected async Task StreamCustomEvent(string channel)
-{
-    await StreamEventType<MyEvent>(
-        channel,
-        keepaliveInterval: TimeSpan.FromSeconds(15)
-    );
-}
+var backplane = new RedisBackplane(redis, channelPrefix: "myapp");
 ```
 
-### Publishing to Multiple Groups
+All Redis pub/sub happens on `{channelPrefix}:events` channel.
+
+### Publishing Methods
 
 ```csharp
+// Publish to single group
+await backplane.PublishToGroup("game:123:PlayerJoinedEvent", evt);
+
+// Publish to multiple groups
 var channels = new[] { "game:123:Event", "game:456:Event" };
-await backplane.PublishToGroups(channels, myEvent);
-```
+await backplane.PublishToGroups(channels, evt);
 
-### Global Broadcast
-
-```csharp
+// Broadcast to all groups (use sparingly)
 await backplane.PublishToAll(systemAnnouncementEvent);
 ```
 
@@ -177,80 +134,125 @@ Console.WriteLine($"Total subscribers: {diagnostics.TotalLocalSubscribers}");
 
 foreach (var group in diagnostics.Groups)
 {
-    Console.WriteLine($"Group '{group.GroupId}': {group.LocalSubscribers} subscribers");
+    Console.WriteLine($"  {group.GroupId}: {group.LocalSubscribers} local subscribers");
 }
+
+// Get count for specific group
+int count = backplane.GetLocalSubscriberCount("game:123:PlayerJoinedEvent");
+
+// Get all active groups on this server
+IEnumerable<string> groups = backplane.GetLocalGroups();
 ```
+
+## Channel Naming Patterns
+
+```csharp
+// Event-specific: "{domain}:{identifier}:{EventType}"
+$"game:{gameId}:PlayerJoinedEvent"
+$"game:{gameId}:RoundStartedEvent"
+
+// Domain-scoped: "{domain}:{identifier}"
+$"game:{gameId}"
+
+// User-specific: "user:{userId}:{EventType}"
+$"user:{userId}:NotificationEvent"
+
+// Broadcast: "{domain}:all"
+$"system:all"
+```
+
+Use `StateleSSE.AspNetCore.ChannelNamingExtensions` for type-safe channel names.
 
 ## Production Considerations
 
-### Keepalives
+### Redis Connection
 
-The library sends keepalive comments every 30 seconds by default to prevent ANCM timeout (120s) in IIS/Azure:
+```csharp
+var options = ConfigurationOptions.Parse("localhost:6379");
+options.AbortOnConnectFail = false;
+options.ReconnectRetryPolicy = new ExponentialRetry(5000);
 
-```
-: keepalive
-```
-
-Browsers ignore these comment lines, but they reset the timeout counter.
-
-### Event IDs
-
-Each event gets an incrementing ID for client-side reconnection tracking:
-
-```
-id: 1
-data: {"gameId":"123","playerName":"Alice"}
-
-id: 2
-data: {"gameId":"123","playerName":"Bob"}
+var redis = ConnectionMultiplexer.Connect(options);
 ```
 
-Clients can track the `lastEventId` to detect missed events on reconnect.
+### Channel Prefix Isolation
 
-### Retry Directive
+Use different prefixes to isolate environments:
 
-The library sends `retry: 3000` to tell browsers to reconnect after 3 seconds on disconnect.
+```csharp
+// Development
+new RedisBackplane(redis, channelPrefix: "dev");
 
-### Nginx Compatibility
+// Production
+new RedisBackplane(redis, channelPrefix: "prod");
+```
 
-The library sets `X-Accel-Buffering: no` header to disable buffering in nginx reverse proxies.
-
-## Performance
-
-### Benchmarks
+### Performance Characteristics
 
 - **Latency**: ~5ms end-to-end (publish → Redis → SSE client)
 - **Throughput**: 10,000+ events/sec per server instance
-- **Overhead**: 0.015 KB/s per connection (keepalives)
 - **Scalability**: Linear scaling with server instances
+- **Connection Overhead**: Minimal - single Redis pub/sub subscription per server
 
-### Best Practices
+### Cleanup
 
-1. **Use specific channels**: Avoid broadcasting to all clients unnecessarily
-2. **Monitor Redis**: Use Redis Cluster for high availability
-3. **Connection limits**: Each server can handle 10,000+ concurrent SSE connections
-4. **Load balancing**: Use sticky sessions OR Redis backplane (this library handles the latter)
+The backplane implements `IDisposable`:
 
-## Research & Academic Use
+```csharp
+public void Dispose()
+{
+    // Unsubscribes from Redis pub/sub
+    // Completes all local channels
+    // Clears subscriber dictionaries
+}
+```
 
-This library was developed as part of a Frascati-compliant applied research project investigating horizontal scaling patterns for Server-Sent Events. The architecture demonstrates:
+Register as singleton to ensure proper lifetime management:
 
-- Novel uncertainty in SSE scaling patterns (not well-documented)
-- Systematic investigation of Redis pub/sub vs. Redis Streams
-- Performance trade-offs in production environments
-- Generalizable patterns for real-time applications
+```csharp
+builder.Services.AddSingleton<ISseBackplane>(sp =>
+    new RedisBackplane(sp.GetRequiredService<IConnectionMultiplexer>()));
+```
+
+## Architecture Patterns
+
+### With StateleSSE.AspNetCore
+
+```csharp
+// Install both packages
+dotnet add package StateleSSE.Backplane.Redis
+dotnet add package StateleSSE.AspNetCore
+
+// Use extension methods for zero boilerplate
+[HttpGet("game/stream")]
+public async Task GameStream([FromQuery] string gameId)
+{
+    var channel = ChannelNamingExtensions.Channel("game", gameId);
+    await HttpContext.StreamSseWithInitialStateAsync(
+        backplane, channel, () => GetGameState(gameId), "game_state");
+}
+```
+
+### With StateleSSE.CodeGen.TypeScript
+
+```csharp
+// Generate TypeScript EventSource clients
+using StateleSSE.CodeGen.TypeScript;
+
+TypeScriptSseGenerator.Generate(
+    openApiSpecPath: "openapi-with-docs.json",
+    outputPath: "../../client/src/generated-sse-client.ts"
+);
+```
+
+## Related Packages
+
+| Package | Purpose |
+|---------|---------|
+| `StateleSSE.Abstractions` | Core `ISseBackplane` interface |
+| `StateleSSE.AspNetCore` | Extension methods for SSE endpoints |
+| `StateleSSE.CodeGen.TypeScript` | TypeScript EventSource client generation |
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Contributing
-
-Contributions welcome! Please open an issue or PR.
-
-## Acknowledgments
-
-Inspired by the need for production-ready SSE scaling in .NET, drawing insights from:
-- [Lib.AspNetCore.ServerSentEvents](https://github.com/tpeczek/Lib.AspNetCore.ServerSentEvents) by Tomasz Pęczek
-- [SignalR Redis backplane](https://docs.microsoft.com/en-us/aspnet/signalr/overview/performance/scaleout-with-redis) patterns
-- Real-world production deployments at scale
+MIT
