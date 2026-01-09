@@ -2,7 +2,7 @@ using StackExchange.Redis;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
-using StateleSSE.Abstractions;
+using StateleSSE.AspNetCore;
 
 namespace StateleSSE.Backplane.Redis.Infrastructure;
 

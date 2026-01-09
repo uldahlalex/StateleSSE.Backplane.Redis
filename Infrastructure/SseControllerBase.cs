@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using StateleSSE.Backplane.Redis.Infrastructure;
+using StateleSSE.AspNetCore;
 
 namespace StateleSSE.Backplane.Redis;
 
@@ -13,9 +13,9 @@ namespace StateleSSE.Backplane.Redis;
 /// - Retry directive for automatic reconnection
 /// - Type-safe event streaming
 /// </summary>
-public abstract class SseControllerBase(Infrastructure.RedisBackplane backplane) : ControllerBase
+public abstract class SseControllerBase(ISseBackplane backplane) : ControllerBase
 {
-    protected readonly Infrastructure.RedisBackplane Backplane = backplane;
+    protected readonly ISseBackplane Backplane = backplane;
 
     /// <summary>
     /// Stream a specific event type to connected clients.

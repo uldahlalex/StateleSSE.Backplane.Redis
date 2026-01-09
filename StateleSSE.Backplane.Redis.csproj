@@ -8,7 +8,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>StateleSSE.Backplane.Redis</PackageId>
-    <Version>1.0.0</Version>
+    <Version>2.0.0</Version>
     <Authors>Alex</Authors>
     <Description>Redis-based backplane for horizontally scaling Server-Sent Events (SSE) in ASP.NET Core. Part of the StateleSSE ecosystem for building stateless, type-safe, real-time streaming applications.</Description>
     <PackageTags>redis;sse;server-sent-events;backplane;horizontal-scaling;real-time;aspnetcore;stateless</PackageTags>
@@ -23,12 +23,12 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('../StateleSSE.Abstractions/StateleSSE.Abstractions.csproj')">
-    <ProjectReference Include="../StateleSSE.Abstractions/StateleSSE.Abstractions.csproj" />
+  <ItemGroup Condition="Exists('../StateleSSE.AspNetCore/StateleSSE.AspNetCore.csproj')">
+    <ProjectReference Include="../StateleSSE.AspNetCore/StateleSSE.AspNetCore.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="!Exists('../StateleSSE.Abstractions/StateleSSE.Abstractions.csproj')">
-    <PackageReference Include="StateleSSE.Abstractions" Version="1.0.0" />
+  <ItemGroup Condition="!Exists('../StateleSSE.AspNetCore/StateleSSE.AspNetCore.csproj')">
+    <PackageReference Include="StateleSSE.AspNetCore" Version="2.0.0" />
   </ItemGroup>
 
   <ItemGroup>

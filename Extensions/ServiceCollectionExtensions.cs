@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
-using StateleSSE.Abstractions;
+using StateleSSE.AspNetCore;
 using StateleSSE.Backplane.Redis.Infrastructure;
 
 namespace StateleSSE.Backplane.Redis.Extensions;
