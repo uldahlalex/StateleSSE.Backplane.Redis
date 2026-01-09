@@ -1,0 +1,47 @@
+name: Publish StateleSSE.Backplane.Redis
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish StateleSSE.Backplane.Redis
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -e
+
+          csproj="StateleSSE.Backplane.Redis.csproj"
+          package_id=$(grep -oP '<PackageId>\K[^<]+' "$csproj")
+          version=$(grep -oP '<Version>\K[^<]+' "$csproj")
+
+          echo "Checking $package_id version $version"
+
+          existing_versions=$(dotnet package search $package_id --exact-match --format json 2>/dev/null || echo '{"searchResult":[]}')
+
+          if echo "$existing_versions" | grep -q "\"version\":\"$version\""; then
+            echo "Version $version of $package_id already exists on NuGet.org, skipping"
+            exit 0
+          fi
+
+          echo "Publishing $package_id version $version"
+
+          dotnet pack "$csproj" -c Release -o ./packages
+
+          package_file="./packages/${package_id}.${version}.nupkg"
+
+          dotnet nuget push "$package_file" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          echo "Successfully published $package_id version $version"

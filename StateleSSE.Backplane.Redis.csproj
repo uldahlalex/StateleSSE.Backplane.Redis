@@ -12,7 +12,7 @@
     <Authors>Alex</Authors>
     <Description>Redis-based backplane for horizontally scaling Server-Sent Events (SSE) in ASP.NET Core. Part of the StateleSSE ecosystem for building stateless, type-safe, real-time streaming applications.</Description>
     <PackageTags>redis;sse;server-sent-events;backplane;horizontal-scaling;real-time;aspnetcore;stateless</PackageTags>
-    <RepositoryUrl>https://github.com/yourusername/StateleSSE</RepositoryUrl>
+    <RepositoryUrl>https://github.com/StateleSSE/StateleSSE.Backplane.Redis</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -23,8 +23,12 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="Exists('../StateleSSE.Abstractions/StateleSSE.Abstractions.csproj')">
     <ProjectReference Include="../StateleSSE.Abstractions/StateleSSE.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="!Exists('../StateleSSE.Abstractions/StateleSSE.Abstractions.csproj')">
+    <PackageReference Include="StateleSSE.Abstractions" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

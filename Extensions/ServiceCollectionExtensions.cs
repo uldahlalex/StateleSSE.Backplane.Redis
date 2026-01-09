@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+using StateleSSE.Abstractions;
 using StateleSSE.Backplane.Redis.Infrastructure;
 
 namespace StateleSSE.Backplane.Redis.Extensions;
@@ -37,6 +38,9 @@ public static class ServiceCollectionExtensions
             return new Infrastructure.RedisBackplane(redis, options.ChannelPrefix);
         });
 
+        // Register ISseBackplane interface
+        services.AddSingleton<ISseBackplane>(sp => sp.GetRequiredService<RedisBackplane>());
+
         return services;
     }
 
@@ -56,6 +60,9 @@ public static class ServiceCollectionExtensions
             var redis = sp.GetRequiredService<IConnectionMultiplexer>();
             return new Infrastructure.RedisBackplane(redis, channelPrefix);
         });
+
+        // Register ISseBackplane interface
+        services.AddSingleton<ISseBackplane>(sp => sp.GetRequiredService<RedisBackplane>());
 
         return services;
     }
